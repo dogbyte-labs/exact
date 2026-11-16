@@ -188,8 +188,8 @@ are cached as immutable; other files revalidate.
 ## Serve a site under a path
 
 A site that shares a host with other pages is served under a base, as `/app/`. Set it once:
-`host.web.base` in the app's `app.json`, or `--base <path>` on `web-build`, `web` and `serve`
-(the flag wins). The path starts and ends with `/`, names no `..` segment, and defaults to `/`.
+`host.web.base` in the app's `app.json`, or `--base <path>` on the app's `exact.mjs` `web-build`, `web` and
+`serve` (the flag wins). The path starts and ends with `/`, names no `..` segment, and defaults to `/`.
 
 The build writes it as every page's `<base href>`, so the scripts, styles, icons and manifest
 resolve under it, and records it in `routes.json` as `base`. The runtime keeps every route,

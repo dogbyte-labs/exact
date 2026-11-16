@@ -1034,7 +1034,7 @@ if (manifest.audio_session) cpSync(resolve(root, 'host/web/audio-session.js'), r
 writeFileSync(resolve(out, 'index.html'), `<!doctype html>
 <html lang="${attr(webManifest.lang)}">
 <meta charset="utf-8">
-<base href="${siteBase}">
+<base href="${siteBase}">${siteBase === '/' ? '' : `\n<meta name="exact-base" content="${attr(siteBase)}">`}
 ${schemeMeta}<title>${attr(manifest.name)}</title>
 <meta name="viewport" content="${viewport}">
 ${colorSchemeMeta(interfaceStyle(manifest))}${icon}

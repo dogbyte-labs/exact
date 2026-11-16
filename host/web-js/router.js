@@ -3,15 +3,14 @@
 import { Refusal, effect, After, journal, clock, commit, W, pressFeedback, fact, Hosts, Resources, Assigned, refused, useTraversal, launchVisits } from "./rt.js";
 import { Counting } from "./held.js";
 import { projectRoots } from "./document.js";
-import { canonical, locationOf, fragmentOf, enc, dec, matchPattern, underBase, stripBase, withBase } from "./route-pattern.js";
+import { canonical, locationOf, fragmentOf, enc, dec, matchPattern, underBase, stripBase, withBase, siteBase } from "./route-pattern.js";
 export { canonical, locationOf };
 const say = line => journal.push(`t=${clock.now} ${line}`);
 let Base = null;
-/** The path the build is served under, from the page's `<base href>`: `/app/`, or `/` when it says nothing. */
+/** The path the build is served under, from the page's `<meta name="exact-base">`: `/app/`, or `/` when it says nothing. */
 function basePath() {
   if (Base !== null) return Base;
-  try { const path = new URL(document.baseURI).pathname; Base = path.endsWith("/") ? path : path + "/"; }
-  catch { Base = "/"; }
+  Base = siteBase(document);
   return Base;
 }
 /** A location the app names, as the browser opens it: `/clients` under `/app/` is `/app/clients`. */

@@ -113,7 +113,7 @@ function mapDesignSource(app, dir) {
  * it was and resolves `{superseded}`: what it read is older than the files.
  * With none, it is published whatever moved. `cancelled()` still sets it
  * aside during shutdown, including the final startup attempt. */
-function build(app, dist, keep = () => false, compiler = null, superseded = null, cancelled = () => false) {
+function build(app, dist, keep = () => false, compiler = null, superseded = null, cancelled = () => false, base = '/') {
   // One stage per dist: two loops on one target/ (two apps outside a workspace, or one CARGO_TARGET_DIR) never
   // build into each other's.
   const stage = resolve(app.target, 'web-js-dev-stage', createHash('sha256').update(resolve(dist)).digest('hex').slice(0, 16));
@@ -249,7 +249,7 @@ export async function devJs({ app, dist, port, host, origins, gate, lan, allowHo
     const input = (name) => name && ((!skipped.test(String(name)) && String(name) !== 'app.contract.d.ts') || /^\.exact(?:[\\/]backend-origin)?$/.test(String(name)) || settingsFile(name));
     const begun = Date.now();
     const early = [watch(app.dir, { recursive: true }, (_, name) => { if (!moved && input(name) && movedSince(resolve(app.dir, String(name)), begun)) moved = true; }), watch(resolve(root, 'host/web-js'), { recursive: true }, (_, name) => { if (!moved && name && !skipped.test(String(name)) && movedSince(resolve(root, 'host/web-js', String(name)), begun)) moved = true; })];
-    try { built = await build(app, dist, () => false, null, tries < 3 ? () => moved : null, () => stopping); } finally { for (const w of early) w.close(); }
+    try { built = await build(app, dist, () => false, null, tries < 3 ? () => moved : null, () => stopping, base); } finally { for (const w of early) w.close(); }
     if (stopping) await shutdown;
     startMoved = moved;
     if (!built.superseded) break;
@@ -631,7 +631,7 @@ export async function devJs({ app, dist, port, host, origins, gate, lan, allowHo
       && next.tokens.every((t, i) => t.name === design.tokens[i].name && String(t.accent) === String(design.tokens[i].accent) && (!t.inline || same(t, design.tokens[i])));
     buildBegan = Date.now();
     console.log(`edit → building${checking ? ' (checking the batch)' : ''}`);
-    built = await build(app, dist, keep, compiler, () => inputs !== began, () => stopping);
+    built = await build(app, dist, keep, compiler, () => inputs !== began, () => stopping, base);
     if (stopping) return;
     if (built.superseded && ++asideRun === 3) console.log('edit → three builds in a row set aside: an input moves during every build (does one write its own input?)');
     if (!built.superseded) { stopped = false; lastBuildMs = Date.now() - buildBegan; asideRun = 0; }

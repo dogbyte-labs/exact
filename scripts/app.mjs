@@ -642,6 +642,7 @@ export function webAppManifest(manifest, name, notes = [], dir = null, base = '/
   // A shortcut's `apple` and `android` words are the native bakes' (LLP 1133.023 D11).
   if (web.shortcuts) web.shortcuts = web.shortcuts.map(({ apple, android, ...item }) => item);
   if (manifest.share_target) web.share_target = webShareTarget(manifest.share_target, notes);
+  if (base !== '/') { for (const s of web.shortcuts ?? []) if (typeof s.url === 'string' && s.url.startsWith('/')) s.url = base.slice(0, -1) + s.url; if (typeof web.share_target?.action === 'string' && web.share_target.action.startsWith('/')) web.share_target.action = base.slice(0, -1) + web.share_target.action; }
   const { icons: _, ...dark } = manifest.color_scheme_dark ?? {};
   if (Object.keys(dark).length) web.color_scheme_dark = dark;
   if (dir && web.icons) web.icons = publishedIcons(web.icons, dir);

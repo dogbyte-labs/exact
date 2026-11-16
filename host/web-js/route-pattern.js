@@ -44,6 +44,13 @@ export function withBase(location, base = '/') {
   if (base === '/' || typeof location !== 'string' || location[0] !== '/' || underBase(location, base)) return location;
   return base.slice(0, -1) + location;
 }
+/** The site base a build recorded (`<meta name="exact-base">`), never the document's `<base>`: `serve` rewrites that
+ * to the generation's path. `/` when the build recorded none. `document` is a parameter so a test can pass one. */
+export function siteBase(document) {
+  const meta = document?.querySelector?.('meta[name="exact-base"]');
+  const value = document?.exactBase ?? meta?.getAttribute?.('content') ?? meta?.content ?? '/';
+  return typeof value === 'string' && value.startsWith('/') ? (value.endsWith('/') ? value : value + '/') : '/';
+}
 /** `fragment_of` (route/src/location.rs): what follows the first `#`, the fragment percent-encode set applied (LLP 1153 D5). */
 export const fragmentOf = location => { const s = clean(location), at = s.indexOf("#"); return at < 0 ? "" : enc(s.slice(at + 1), b => b < 0x21 || b > 0x7e || '"<>`'.includes(String.fromCharCode(b))); };
 /** `location_of` (route/src/location.rs): an incoming URL uses the router's path serializer, its fragment kept. */
