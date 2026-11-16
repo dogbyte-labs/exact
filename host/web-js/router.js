@@ -3,9 +3,19 @@
 import { Refusal, effect, After, journal, clock, commit, W, pressFeedback, fact, Hosts, Resources, Assigned, refused, useTraversal, launchVisits } from "./rt.js";
 import { Counting } from "./held.js";
 import { projectRoots } from "./document.js";
-import { canonical, locationOf, fragmentOf, enc, dec, matchPattern } from "./route-pattern.js";
+import { canonical, locationOf, fragmentOf, enc, dec, matchPattern, underBase, stripBase, withBase } from "./route-pattern.js";
 export { canonical, locationOf };
 const say = line => journal.push(`t=${clock.now} ${line}`);
+let Base = null;
+/** The path the build is served under, from the page's `<base href>`: `/app/`, or `/` when it says nothing. */
+function basePath() {
+  if (Base !== null) return Base;
+  try { const path = new URL(document.baseURI).pathname; Base = path.endsWith("/") ? path : path + "/"; }
+  catch { Base = "/"; }
+  return Base;
+}
+/** A location the app names, as the browser opens it: `/clients` under `/app/` is `/app/clients`. */
+const routed = location => canonical(withBase(location, basePath()));
 // A Router is [tab, tabs, next]; a Tab [name, stack]; an Entry
 // [id, name, url, tab, params, fragment], params positional in the table's
 // first-declaration order of distinct `:names`.
@@ -19,7 +29,8 @@ export function routes(table) {
 }
 const empty = () => Names.map(() => "");
 function matchRoute(url) {
-  const params = empty(), index = matchPattern(Routes, url, (name, value) => { params[Names.indexOf(name)] = value; });
+  const base = basePath(), outside = base !== "/" && !underBase(url, base);
+  const params = empty(), index = outside ? -1 : matchPattern(Routes, stripBase(url, base), (name, value) => { params[Names.indexOf(name)] = value; });
   if (index >= 0) return [index, params];
   const nf = Routes.findIndex(r => r.notfound);
   return nf < 0 ? null : [nf, empty()];
@@ -33,7 +44,7 @@ function rootFor(i) {
 const segmentOf = v => { if (["", ".", ".."].includes(v)) throw new Refusal("a path parameter cannot be empty, `.` or `..`"); return enc(v, b => !/[A-Za-z0-9\-_.!~*'()]/.test(String.fromCharCode(b))); };
 const path = (r, values) => r.pattern.split("/").map(s => s[0] === ":" ? segmentOf(values.shift() ?? "") : s).join("/");
 function chain(location) {
-  const url = canonical(location), m = matchRoute(url);
+  const url = routed(location), m = matchRoute(url);
   if (!m) return [];
   const [index, params] = m, root = rootFor(index);
   if (root == null) return [];
@@ -43,7 +54,7 @@ function chain(location) {
   return idx.reverse().map(i => {
     const r = Routes[i], own = empty();
     for (const n of names(r.pattern)) own[Names.indexOf(n)] = params[Names.indexOf(n)];
-    return { name: r.name, url: i === index ? url : canonical(path(r, names(r.pattern).map(n => params[Names.indexOf(n)]))), tab: Routes[root].name, params: own };
+    return { name: r.name, url: i === index ? url : routed(path(r, names(r.pattern).map(n => params[Names.indexOf(n)]))), tab: Routes[root].name, params: own };
   });
 }
 const entry = (id, d, fragment = "") => [id, d.name, d.url, d.tab, d.params, fragment];
@@ -70,7 +81,7 @@ function open_(r, location) {
   if (!c.length) return refuse(r, `no route matches ${canonical(location)}`);
   const out = copy(r);
   // The location's own tab is seeded at its chain's root visit: a query on a root location changes no id (exact-route `open`).
-  if (!out[1].length) for (const i of roots()) out[1].push([Routes[i].name, [mint(out, Routes[i].name === c[0].name ? c[0] : { name: Routes[i].name, url: canonical(Routes[i].pattern), tab: Routes[i].name, params: empty() })]]);
+  if (!out[1].length) for (const i of roots()) out[1].push([Routes[i].name, [mint(out, Routes[i].name === c[0].name ? c[0] : { name: Routes[i].name, url: routed(Routes[i].pattern), tab: Routes[i].name, params: empty() })]]);
   const t = out[1].find(t => t[0] === c[0].tab), leaf = c.length - 1, fragment = fragmentOf(location);
   if (!t) return refuse(r, `unknown tab ${c[0].tab}`);
   // The leaf takes the location's fragment; an ancestor kept keeps its own.
@@ -78,7 +89,7 @@ function open_(r, location) {
   out[0] = c[0].tab;
   return out;
 }
-function dest(r, location) { const url = canonical(location), m = matchRoute(url); return m && { name: Routes[m[0]].name, params: m[1], url, tab: r[0] }; }
+function dest(r, location) { const url = routed(location), m = matchRoute(url); return m && { name: Routes[m[0]].name, params: m[1], url, tab: r[0] }; }
 function push_(r, location) {
   if (!r[1].length) return open_(r, location);
   const d = dest(r, location), i = sel(r);
@@ -106,7 +117,7 @@ function select_(r, name) {
   const out = copy(r); if (r[0] === name) out[1][i][1].length = 1; out[0] = name; return out;
 }
 function go_(r, location) {
-  const url = canonical(location), fragment = fragmentOf(location);
+  const url = routed(location), fragment = fragmentOf(location);
   if (!matchRoute(url)) return refuse(r, `no route matches ${url}`);
   const s = stack_(r), at = s.map(e => e[2]).lastIndexOf(url);
   if (at === s.length - 1 && s[at][5] === fragment) return r;
@@ -142,7 +153,7 @@ export function setShared(token, files, dropped, pending) {
   Shared.set(token, [files, dropped, pending]); commit(() => sharedSet().bump(), "shared");
 }
 export { segmentOf }; // `encodeRouteSegment` is budget.js's, checked
-export const x_path = (name, ...values) => path(Routes.find(r => r.name === name && !r.notfound), values);
+export const x_path = (name, ...values) => withBase(path(Routes.find(r => r.name === name && !r.notfound), values), basePath());
 /** The router slot's changes, to the browser's history (`navigation.js`,
  * the web host's own), and a popstate back as the navigation root's
  * `navigate` (LLP 1038 D7, D11). */
@@ -176,7 +187,7 @@ function navigating(f) {
   return (r, location) => {
     let next = f(r, location); const fragment = fragmentOf(location), t = top_(next);
     // A new value even where nothing changed, so that assigning it is told from assigning the router itself (`assigned`).
-    if (fragment && t[2] === canonical(location) && t[5] === fragment) { if (next === r) next = copy(r); Navigations.push([next, t[0], fragment]); }
+    if (fragment && t[2] === routed(location) && t[5] === fragment) { if (next === r) next = copy(r); Navigations.push([next, t[0], fragment]); }
     return next;
   };
 }
@@ -272,16 +283,16 @@ export function router(slot, history) {
 /** `location` (a path and query) routed in place as a link to it is: the navigation root's `navigate` handler, else the
  * router's own `go` (the development page's `navigate` command, LLP 1122 T7). Why not, or "". */
 export function goTo(location) {
-  const m = matchRoute(canonical(location)), said = JSON.stringify(location.length > 200 ? `${location.slice(0, 200)}…` : location);
+  const m = matchRoute(routed(location)), said = JSON.stringify(location.length > 200 ? `${location.slice(0, 200)}…` : location);
   if (m === null || Routes[m[0]].notfound) return `${said} is no route of this app`;
-  const before = RouterSlot?.n?.v;
-  if (Navigate) Navigate(location); else hostGo(location);
+  const target = withBase(location, basePath()), before = RouterSlot?.n?.v;
+  if (Navigate) Navigate(target); else hostGo(target);
   return RouterSlot?.n?.v === before ? `the app's router took no step to ${said}` : "";
 }
 export const navigateTo = f => { Navigate = f; }, navigateRoot = location => Navigate ? (Navigate(location), true) : false; // the agent's `type <root> <location>` (LLP 1038 D11)
-export const routeAt = location => matchRoute(canonical(location))?.[0] ?? -1;
+export const routeAt = location => matchRoute(routed(location))?.[0] ?? -1;
 /** Whether `location` names a declared route, never only the notfound fallback: the runner's `route_matches`. */
-export const routeMatches = location => { const m = matchRoute(canonical(location)); return m !== null && !Routes[m[0]].notfound; };
+export const routeMatches = location => { const m = matchRoute(routed(location)); return m !== null && !Routes[m[0]].notfound; };
 // ---------------------------------------------------------------- validity
 const int = n => typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= 9007199254740991, str = s => typeof s === "string";
 /** Whether `r` is a valid router (runner/src/runner/router.rs `router`): its shape; tabs of distinct names, each stack

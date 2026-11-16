@@ -87,13 +87,14 @@ export const HELP = {
   status: {line:'the game\'s web and prove runs: phase and elapsed time', usage:'bun exact.mjs status', flags:[], body:'Lists the game\'s web and prove invocations with their phase, elapsed time, previous duration and exit status.', example:'bun exact.mjs status'},
   web: {
     line: 'the web dev loop: serves the app, reloading the page on every save (foreground)',
-    usage: 'bun exact.mjs web [--port <n>] [--lan] [--allow-host <name>]… [--wasm]',
+    usage: 'bun exact.mjs web [--port <n>] [--lan] [--allow-host <name>]… [--base <path>] [--wasm]',
     common: ['web [--port <n>]    for a person watching: its URL, rebuilt on save'],
     flags: [
       ['--port <n>', 'listen on <n>, refused if taken (default 8765, else the first free port to 8864)'],
       ['--ready', 'wait for the current game web invocation to serve its current build; start web separately'],
       ['--timeout <s>', 'limit the --ready wait (default 600 seconds)'],
       ['--lan', 'bind every interface, so a phone on this network opens the printed LAN URL'],
+      ['--base <path>', 'serve the app under this path (default: app.json host.web.base, else /)'],
     ],
     more: [
       ['--allow-host <name>', 'also answer to this host name (a tunnel\'s); repeatable'],
@@ -115,10 +116,11 @@ export const HELP = {
   },
   'web-build': {
     line: 'build the web app once (the page test web and agent web drive)',
-    usage: 'bun exact.mjs web-build [--out <dir>] [--render rust|js|none] [--json]',
+    usage: 'bun exact.mjs web-build [--out <dir>] [--render rust|js|none] [--base <path>] [--json]',
     flags: [
       ['--out <dir>', 'a release build there (inside the app: dist), as deploy publishes, and how a static host serves it'],
       ['--render rust|js|none', 'pre-rendered pages: rust (the app\'s <app>-render entry; the default where it has one), js (Bun; the default otherwise), none'],
+      ['--base <path>', 'the path the site is served under (default: app.json host.web.base, else /); routes.json records it'],
       jsonBuilt(),
     ],
     internal: ['--js', '--wasm', '--bake', '--check'],
@@ -130,11 +132,12 @@ Ports    none. Runs to completion: exit 0 when it built. test web and agent web 
   },
   serve: {
     line: 'serve a built site, as a static host would (npm start)',
-    usage: 'bun exact.mjs serve [<dir>] [--port <n>] [--lan]',
+    usage: 'bun exact.mjs serve [<dir>] [--port <n>] [--lan] [--base <path>]',
     flags: [
       ['--port <n>', 'listen on <n> (default: PORT from the environment, else 8765)'],
       ['--lan', 'bind every interface, so another device on this network opens it'],
       ['--origin <dir>', 'a directory deploy published to, in place of a build'],
+      ['--base <path>', 'the path to serve the build under (default: the base its routes.json records, else /)'],
     ],
     internal: ['--loopback'],
     body: `Serves <dir> (default target/web-dist, web-build's) and prints its URL. For a request: the

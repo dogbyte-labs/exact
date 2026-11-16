@@ -19,9 +19,9 @@ import { canonicalBytes, readAssetIndex } from '../../scripts/deploy-signing.mjs
 import { copyShaders, developmentURLScheme, resolveApp, webDist, webHostFiles } from '../../scripts/app.mjs';
 import { settingChanges } from '../../js/bake/src/__exact_env.mjs';
 import { acceptsHTML, appDocumentPath, prefersMarkdown, webRequestURL, parseWebRoot, sha256, webReleasePath, webRootPath } from '../../scripts/origin.mjs';
-import { canonical, filePathOf, matchPattern } from '../web-js/route-pattern.js';
+import { canonical, filePathOf, matchPattern, stripBase, underBase, withBase } from '../web-js/route-pattern.js';
 import { guardFlags } from '../../scripts/help.mjs';
-import { slashRelative, within } from '../../scripts/paths.mjs';
+import { slashRelative, webBase, within } from '../../scripts/paths.mjs';
 
 import { INSTALL_FILES, INSTALL_PUBLIC, INSTALL_ROOT, installRoute, installNetworkPage } from '../../scripts/install-page.mjs';
 import { COMPRESSIBLE, acceptedEncodings, bodyDigest, compressionCache, matchesETag } from './compression.mjs';
@@ -788,15 +788,16 @@ export function replaceBuild(stage, dist) {
  * cannot render on request, which `serve` renders, then the directory and the rule any static host serves it by, which `serve` applies
  * (`buildTreeFile`). */
 export function hostingNotes(dist, serve = 'bun exact.mjs serve') {
-  const shown = relative(process.cwd(), dist) || '.', routes = JSON.parse(readFileSync(resolve(dist, 'routes.json'), 'utf8')).routes;
+  const shown = relative(process.cwd(), dist) || '.', table = JSON.parse(readFileSync(resolve(dist, 'routes.json'), 'utf8')), routes = table.routes, base = table.base ?? '/';
   const missing = existsSync(resolve(dist, '404.html')) ? '404.html with status 404' : 'status 404, a page with shell.html as its body (the client draws the notfound route)';
   // A public page left at the default reaches its reader last, after the runtime and then its data.
   const client = routes.filter((r) => r.render === 'client' && !r.notfound).map((r) => r.pattern);
   return [
     ...client.length ? [`${client.join(', ')}: render=client, the default, so the browser draws the page only once app.js and its data have loaded; a page every reader sees alike arrives whole sooner as render=request, which serve renders with the API's answer at each request (docs/recipes/website.md)`] : [],
     ...routes.filter((r) => r.render === 'request' || r.render === 'cached').map((r) => `${r.notfound ? 'notfound' : r.pattern}: render=${r.render}, so serve renders its page ${r.render === 'cached' ? 'and keeps it 60 s' : 'for each request'}; a static host serves its shell, and the client draws it`),
+    ...(base === '/' ? [] : [`${base}: this build is served under this path. A static host routes ${base} to this directory; a request outside it is 404.`]),
     `${shown}: the site, for any static host. ${serve} ${shown} serves it by the rule a host applies:`,
-    `  a file at the path; else, for a browser's navigation to a path a route in routes.json matches, shell.html with status 200; else ${missing}.`,
+    `  a file at the path${base === '/' ? '' : ` under ${base}`}; else, for a browser's navigation to a path a route in routes.json matches, shell.html with status 200; else ${missing}.`,
     '  A host with a single fallback page serves shell.html for every page it lacks; the client then draws the notfound route.',
   ];
 }
@@ -922,27 +923,29 @@ const asksPage = (req, pathname) => acceptsHTML(req.headers.accept) || (!!pathna
  * its shell. With `compression` (`serve`'s, `compressionCache`), it is a site's server: a page goes compressed as the
  * reader accepts, and a file as its warmed variant, revalidated by its ETag; else (the drivers, the dev server) every
  * response is identity and never kept. */
-export async function serveBuildTree(dist, req, res, { pinned = null, pages = null, compression = null } = {}) {
+export async function serveBuildTree(dist, req, res, { base = '/', pinned = null, pages = null, compression = null } = {}) {
   // The raw target is refused as serveStatic refuses it (an encoded dot
   // segment); a parsed URL would resolve one into another route.
   const target = webRequestURL(req.url);
+  // A request outside the path the build is served under is no page of this site.
+  if (target && !underBase(target.pathname, base)) { res.writeHead(404, { 'cache-control': 'no-store' }); res.end(); return; }
   // A waiting page's answers, kept by the renderer that made it (render.mjs `deferredAnswers`, LLP 1048.007 D10).
   const answers = target && pages?.answers?.(target.pathname);
   if (answers) {
     sendStaticBody(req, res, answers.body, { 'content-type': answers.status === 200 ? 'application/json' : 'text/plain; charset=utf-8', 'cache-control': answers.status === 200 ? 'private, max-age=3600, immutable' : 'no-store' }, answers.status);
     return;
   }
-  const under = target && generationPath(target.pathname), path = under?.path ?? target?.pathname, prefix = under ? target.pathname.slice(0, -path.length) : '';
-  const negotiated = !!target && under !== 'bad' && !extname(path), markdown = negotiated && prefersMarkdown(req.headers.accept) ? await servedFile(dist, `${prefix}${path.replace(/\/+$/, '') || '/index'}.md`, req.headers.accept, { pinned }) : null;
-  let r = markdown?.status === 200 && markdown.route.endsWith('.md') ? markdown : target ? await servedFile(dist, target.pathname, req.headers.accept, { pinned }) : { status: 404 };
+  const under = target && generationPath(target.pathname, base), path = under?.path ?? target?.pathname, prefix = under ? target.pathname.slice(0, -path.length) : '';
+  const negotiated = !!target && under !== 'bad' && !extname(path), markdown = negotiated && prefersMarkdown(req.headers.accept) ? await servedFile(dist, `${prefix}${path.replace(/\/+$/, '') || '/index'}.md`, req.headers.accept, { pinned, base }) : null;
+  let r = markdown?.status === 200 && markdown.route.endsWith('.md') ? markdown : target ? await servedFile(dist, target.pathname, req.headers.accept, { pinned, base }) : { status: 404 };
   // A request taking any type (curl's) is answered as a navigation where that is a page rendered for it, as any
   // server rendering pages answers it; a route the client draws stays a browser's.
-  if (pages && target && r !== markdown && asksPage(req, target.pathname) && !acceptsHTML(req.headers.accept)) {
-    const page = await servedFile(dist, target.pathname, 'text/html', { pinned });
+  if (pages && target && r !== markdown && asksPage(req, stripBase(target.pathname, base)) && !acceptsHTML(req.headers.accept)) {
+    const page = await servedFile(dist, target.pathname, 'text/html', { pinned, base });
     if (page.route === '/shell.html' && ['request', 'cached'].includes(page.render)) r = page;
   }
-  if (markdown && r.status === 404 && (await servedFile(dist, target.pathname, 'text/html', { pinned })).status === 404) {
-    const missing = await servedFile(dist, `${prefix}/404.md`, req.headers.accept, { pinned });
+  if (markdown && r.status === 404 && (await servedFile(dist, target.pathname, 'text/html', { pinned, base })).status === 404) {
+    const missing = await servedFile(dist, `${prefix}/404.md`, req.headers.accept, { pinned, base });
     if (missing.status === 200 && missing.route === '/404.md') r = { ...missing, status: 404 };
   }
   if (r.status === 410) { res.writeHead(410, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }); res.end(`build generation ${r.id} is no longer kept here: load the page again\n`); return; }
@@ -950,7 +953,7 @@ export async function serveBuildTree(dist, req, res, { pinned = null, pages = nu
     let page = null;
     // A HEAD has no body to send the head of before the render.
     const header = (name) => (name === 'sec-fetch-dest' && req.method === 'HEAD' ? undefined : req.headers[name]);
-    try { page = await pages(r.id, (r.location ?? target.pathname) + target.search, header); } catch (error) {
+    try { page = await pages(r.id, (r.location ? withBase(r.location, base) : target.pathname) + target.search, header); } catch (error) {
       console.error(`render ${target.pathname}: ${error.message}`);
       res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }); res.end('This page could not be rendered.\n'); return;
     }
@@ -1226,10 +1229,12 @@ export async function serve(args = process.argv.slice(2), { js = null, sitePages
     if (!argv[at + 1] || argv[at + 1].startsWith('--')) { console.error(`serve: ${flag} needs a value`); process.exit(2); }
     return argv.splice(at, 2)[1];
   };
-  const origin = value('--origin'), portFlag = value('--port');
+  const origin = value('--origin'), portFlag = value('--port'), baseFlag = value('--base');
   const named = argv.filter((a) => !a.startsWith('--'));
   if (named.length > 1 || origin && named.length) { console.error(`serve: one directory, a build or a published --origin, not ${[...named, origin].filter(Boolean).join(' and ')}`); return 2; }
   const dist = resolve(origin ?? named[0] ?? webDist());
+  const builtBase = (() => { try { return JSON.parse(readFileSync(resolve(dist, 'routes.json'), 'utf8')).base ?? '/'; } catch { return '/'; } })();
+  const base = webBase(baseFlag ?? builtBase, baseFlag !== null);
   const settled = settleBuild(dist);
   if (settled) return settled;
   // A JS-target build (LLP 1071) is served as its tree. A published root is its pointer's release, whose page is the
@@ -1258,18 +1263,18 @@ export async function serve(args = process.argv.slice(2), { js = null, sitePages
   const pages = js ? (sitePages ?? (await import('../web-js/render.mjs')).sitePages)(dist) : null;
   const rebuild = rebuildOnChange(dist);
   const server = createServer(async (req, res) => {
-    if (rebuild && (asksPage(req, webRequestURL(req.url)?.pathname) || (prefersMarkdown(req.headers.accept) && appDocumentPath(webRequestURL(req.url)?.pathname ?? '')))) {
+    if (rebuild && (asksPage(req, stripBase(webRequestURL(req.url)?.pathname ?? '', base)) || (prefersMarkdown(req.headers.accept) && appDocumentPath(stripBase(webRequestURL(req.url)?.pathname ?? '', base))))) {
       const failed = await rebuild();
       if (failed) { res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }); res.end(`The app's build failed, so this is the last build's page no more:\n\n${failed.slice(-6000)}`); return; }
     }
-    return js ? serveBuildTree(dist, req, res, { pages, compression }) : serveStatic(dist, req, res, {host,port}, compression);
+    return js ? serveBuildTree(dist, req, res, { base, pages, compression }) : serveStatic(dist, req, res, {host,port}, compression);
   });
   server.on('error', (error) => { console.error(error.code === 'EADDRINUSE' ? `serve: port ${port} is in use; --port <n> names another` : `serve: ${error.message}`); process.exit(1); });
   server.listen(port, host, () => {
-    const urls = [`http://127.0.0.1:${server.address().port}/`];
+    const urls = [`http://127.0.0.1:${server.address().port}${base}`];
     if (!loopback) {
       const priv = (a) => /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a);
-      urls.push(...Object.values(networkInterfaces()).flat().filter((a) => a && !a.internal && a.family === 'IPv4').map((a) => a.address).sort((a, b) => priv(b) - priv(a)).map((a) => `http://${a}:${server.address().port}/`));
+      urls.push(...Object.values(networkInterfaces()).flat().filter((a) => a && !a.internal && a.family === 'IPv4').map((a) => a.address).sort((a, b) => priv(b) - priv(a)).map((a) => `http://${a}:${server.address().port}${base}`));
     }
     // Name the app, so a directory another build replaced is seen at once (LLP 1054 O5).
     let served = '';

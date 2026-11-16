@@ -27,6 +27,23 @@ export function canonical(location) {
   });
   return "/" + segs.join("/") + (query ? "?" + enc(query, b => b < 0x21 || b > 0x7e || "\"#<>'".includes(String.fromCharCode(b))) : "");
 }
+/** Whether `location` is at or under `base` (a path that starts and ends with `/`). */
+export function underBase(location, base = '/') {
+  if (base === '/') return true;
+  const root = base.slice(0, -1);
+  return location === root || location.startsWith(root + '/') || location.startsWith(root + '?') || location.startsWith(root + '#');
+}
+/** `location` as the app names it, the base taken off: `/app/clients?q` is `/clients?q`, `/app` and `/app/` are `/`. */
+export function stripBase(location, base = '/') {
+  if (base === '/' || typeof location !== 'string' || !underBase(location, base)) return location;
+  const rest = location.slice(base.length - 1);
+  return rest === '' || rest[0] === '?' || rest[0] === '#' ? '/' + rest : rest;
+}
+/** The URL a browser opens for the app's `location`: `/clients` under `/app/` is `/app/clients`. */
+export function withBase(location, base = '/') {
+  if (base === '/' || typeof location !== 'string' || location[0] !== '/' || underBase(location, base)) return location;
+  return base.slice(0, -1) + location;
+}
 /** `fragment_of` (route/src/location.rs): what follows the first `#`, the fragment percent-encode set applied (LLP 1153 D5). */
 export const fragmentOf = location => { const s = clean(location), at = s.indexOf("#"); return at < 0 ? "" : enc(s.slice(at + 1), b => b < 0x21 || b > 0x7e || '"<>`'.includes(String.fromCharCode(b))); };
 /** `location_of` (route/src/location.rs): an incoming URL uses the router's path serializer, its fragment kept. */

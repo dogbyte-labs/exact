@@ -217,6 +217,10 @@ const render = renderFlag < 0 ? [] : process.argv.splice(renderFlag, 2);
 const outFlag = process.argv.indexOf('--out');
 const outDir = outFlag < 0 ? null : process.argv.splice(outFlag, 2)[1];
 if (outFlag >= 0 && (!outDir || outDir.startsWith('--'))) { console.error('web-build: --out names a directory'); process.exit(2); }
+// `--base <path>`: the path the JS target's site is served under (host/web-js/build.mjs).
+const baseFlag = process.argv.indexOf('--base');
+const base = baseFlag < 0 ? [] : process.argv.splice(baseFlag, 2);
+if (baseFlag >= 0 && (!base[1] || base[1].startsWith('--'))) { console.error('web-build: --base names a path'); process.exit(2); }
 const app = resolveApp(process.argv[2]);
 const outRoot = outDir && outPath(outDir);
 /** `--out`'s directory, its links resolved, once it is one the build may replace whole: never the app, this checkout or
@@ -268,6 +272,7 @@ if (checkOnly) {
   return;
 }
 if (outDir && (target === '--wasm' || game || bakeOnly)) { console.error('web-build: --out writes the JS target, an app\'s web build; a game\'s wasm build is target/web-dist'); process.exit(2); }
+if (base.length && (target === '--wasm' || game || bakeOnly)) { console.error('web-build: --base writes the JS target\'s site under a path; a game\'s wasm build serves at the root'); process.exit(2); }
 if (target !== '--wasm' && !game && !bakeOnly) {
   // An app outside apps/ reaches it through EXACT_APP_DIR, as here. It builds in a stage of its own beside the
   // output, which replaces the output only when complete (`replaceBuild`), so builds run at once never mix, and the
@@ -283,7 +288,7 @@ if (target !== '--wasm' && !game && !bakeOnly) {
   // A site to host is a release, as delivery builds one (`--production`): agent mode refused, the app's storage its id
   // alone, its install pages a release's.
   const release = outDir ? { flags: ['--production'], env: { EXACT_UPDATE_TRUST: 'production' } } : { flags: [], env: {} };
-  const js = spawnSync(process.execPath, [fileURLToPath(new URL('../web-js/build.mjs', import.meta.url)), app.name, '--out', stage, ...render, ...release.flags], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', env: { ...process.env, EXACT_APP_DIR: app.dir, ...release.env } });
+  const js = spawnSync(process.execPath, [fileURLToPath(new URL('../web-js/build.mjs', import.meta.url)), app.name, '--out', stage, ...render, ...base, ...release.flags], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', env: { ...process.env, EXACT_APP_DIR: app.dir, ...release.env } });
   // What it says names the output, not the stage.
   const said = (text) => (text ?? '').replaceAll(stage, dist);
   js.stderr = said(js.stderr);

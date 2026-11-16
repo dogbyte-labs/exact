@@ -2,6 +2,7 @@ import { grantWords, trimGrant } from '../web/grant-admission.js';
 import { asyncContext, bundleOptions, developmentLocalNetwork, lowered, packageConfig, webImplementations } from '../../js/bake/src/typescript.mjs';
 import { buildPageFiles, writeCrawlerFiles } from '../web/crawl.mjs';
 import { bakeWatchEnv, hatchWords, injectedProfiles, moduleDirectory, resolveApp, webAppManifest, webToolchainEnv } from '../../scripts/app.mjs';
+import { webBase } from '../../scripts/paths.mjs';
 import { rustDataOf } from '../../scripts/app-shells.mjs';
 import { webIconLinks, webThemeColors } from '../../scripts/app-icons.mjs';
 import { webAudioSession, webCspFile, webHead } from '../../scripts/web-head.mjs';
@@ -104,10 +105,13 @@ mkdirSync(gen, { recursive: true });
 
 const input = opt('--plan') ?? opt('--contract') ?? resolve(appDir, 'app.contract');
 const manifest = JSON.parse(readFileSync(resolve(appDir, 'app.json'), 'utf8'));
+// The path this site is served under: `--base` (host/web/build.mjs carries the app's), else app.json's `host.web.base`.
+const baseFlag = opt('--base');
+const siteBase = webBase(baseFlag ?? manifest.host?.web?.base, baseFlag !== null);
 // documents-glue reads the app's web manifest lazily. The JS path exits from
 // host/web/build.mjs after this builder succeeds, so it owns the same artifact.
 const manifestNotes = [];
-const webManifest = webAppManifest(manifest, manifest.app?.name ?? manifest.name, manifestNotes, appDir);
+const webManifest = webAppManifest(manifest, manifest.app?.name ?? manifest.name, manifestNotes, appDir, siteBase);
 for (const note of manifestNotes) console.log(note);
 writeFileSync(resolve(out, 'manifest.json'), JSON.stringify(webManifest, null, 2) + '\n');
 // Rust data: the app's own module (`rust.module`), or a module generated
@@ -1030,7 +1034,7 @@ if (manifest.audio_session) cpSync(resolve(root, 'host/web/audio-session.js'), r
 writeFileSync(resolve(out, 'index.html'), `<!doctype html>
 <html lang="${attr(webManifest.lang)}">
 <meta charset="utf-8">
-<base href="/">
+<base href="${siteBase}">
 ${schemeMeta}<title>${attr(manifest.name)}</title>
 <meta name="viewport" content="${viewport}">
 ${colorSchemeMeta(interfaceStyle(manifest))}${icon}
@@ -1199,7 +1203,7 @@ const pages = JSON.parse(readFileSync(resolve(gen, 'pages.json'), 'utf8'));
 cpSync(resolve(out, 'index.html'), resolve(out, 'shell.html'));
 const { planRouteTable } = await import('../web/serve.mjs');
 const routes = planRouteTable(readFileSync(resolve(out, 'app.plan'))).map(({ name, pattern, render, notfound }) => ({ name, pattern, render, notfound }));
-writeFileSync(resolve(out, 'routes.json'), JSON.stringify({ routes }, null, 2) + '\n');
+writeFileSync(resolve(out, 'routes.json'), JSON.stringify(siteBase === '/' ? { routes } : { base: siteBase, routes }, null, 2) + '\n');
 // Compile known reader text even when the development build emits only a shell.
 if (markdownReaders) {
   const { markdownAt, renderer } = await import('./render.mjs');
@@ -1234,12 +1238,12 @@ if (pages.length && how === 'rust') {
     mkdirSync(dirname(resolve(out, file)), { recursive: true });
     writeFileSync(resolve(out, file), doc.page);
   }
-  writeCrawlerFiles(out, docs, manifest.app?.origin, routes);
+  writeCrawlerFiles(out, docs, manifest.app?.origin, routes, siteBase);
   console.log(`${out}: ${pages.length} pages rendered by ${bin}`);
 } else if (pages.length && how === 'js') {
   const r = spawnSync('bun', [resolve(here, 'render.mjs'), out, '--build'], { cwd: root, stdio: 'inherit' });
   if (r.status !== 0) process.exit(1);
 } else if (how !== 'none' && routes.length) {
-  writeCrawlerFiles(out, [], null, routes); // robots.txt alone: no page made at build to list
+  writeCrawlerFiles(out, [], null, routes, siteBase); // robots.txt alone: no page made at build to list
 }
 console.log(`${out}: app.js ${statSync(resolve(out, 'app.js')).size} B, built`);

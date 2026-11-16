@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { underBase } from '../web-js/route-pattern.js';
 import { BESIDE } from './beside.mjs';
 import { lockHeld } from './build-lock.mjs';
 import { buildTreeFileAsync } from './serve.mjs';
@@ -246,6 +247,7 @@ export function withGenerationBase(html, id, base = '/') {
  * generation path, 404 (with the build's page for a miss where it has one), or 410 for a generation kept no more;
  * `render`, for the shell, is the render policy of the route it is served for. */
 export async function servedFile(dist, pathname, accept = '', { base = '/', pinned = null } = {}) {
+  if (!underBase(pathname, base)) return { status: 404 };
   const under = generationPath(pathname, base);
   if (under === 'bad') return { status: 400 };
   // The path in the app: a request under a generation names its page without that prefix.

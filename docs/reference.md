@@ -185,6 +185,23 @@ download another as a delta (LLP 1047.000 §9): after a one-line app change, 9.5
 instead of 238.6. Versioned builds and stage files whose names match their content
 are cached as immutable; other files revalidate.
 
+## Serve a site under a path
+
+A site that shares a host with other pages is served under a base, as `/app/`. Set it once:
+`host.web.base` in the app's `app.json`, or `--base <path>` on `web-build`, `web` and `serve`
+(the flag wins). The path starts and ends with `/`, names no `..` segment, and defaults to `/`.
+
+The build writes it as every page's `<base href>`, so the scripts, styles, icons and manifest
+resolve under it, and records it in `routes.json` as `base`. The runtime keeps every route,
+`path(...)`, link, push, replace, history entry and Back or Forward inside it: a location
+outside it draws the notfound route. `serve` and the dev loop answer under the path only and
+404 outside it. A static host routes the path to the build's directory. The manifest's
+`start_url` and `scope` follow the base. A base of `/` is the default and changes nothing.
+
+Native hosts are unaffected: `host.web.base` names a web site. The Rust renderer's
+`render=build` pages and the wasm target do not yet follow a base, so `--base` writes the
+JS target's site (`render=js`); a game's wasm build serves at the root.
+
 ## Inspect and format Contract
 
 ```sh

@@ -16,7 +16,7 @@ import vm from 'node:vm';
 import { brotliCompressSync, createBrotliCompress, constants } from 'node:zlib';
 import { createDocument, esc } from './dom.js';
 import { cachingFetch, directives, FRESH } from './http-cache.mjs';
-import { canonical } from './route-pattern.js';
+import { canonical, withBase } from './route-pattern.js';
 import { select, tokens } from './page-style.mjs';
 import { buildPageFiles, writeCrawlerFiles } from '../web/crawl.mjs';
 import { generationOf, withGenerationBase } from '../web/generations.mjs';
@@ -159,6 +159,8 @@ export function renderer(dist, { closed = false, read = path => readFileSync(res
   const script = new vm.Script(read('.gen/server.js').toString('utf8'), { filename: 'server.js' });
   let shell;
   try { shell = read('shell.html').toString('utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; shell = read('index.html').toString('utf8'); }
+  // The path the shell is served under (`host.web.base`, written into its `<base>`): the runtime and every link resolve there.
+  const base = (() => { const at = /<base[^>]*href="([^"]*)"/i.exec(shell)?.[1] ?? '/'; return at.endsWith('/') ? at : at + '/'; })();
   // The rendered head combines the shell's scheme bootstrap with its capture script.
   shell = shell.replace(/<script data-exact-scheme>[\s\S]*?<\/script>\n/, '');
   const capture = (readFileSync(new URL('../web/scheme.js', import.meta.url), 'utf8') + readFileSync(new URL('./capture.js', import.meta.url), 'utf8')).trim();
@@ -217,8 +219,8 @@ export function renderer(dist, { closed = false, read = path => readFileSync(res
     const document = createDocument(shell);
     // The bake's page facts (runner/src/page.rs): visible, online, focused, no share sheet or pickers. The
     // base is the shell's `<base href="/">`, against which the runtime checks that a link navigates (rt.js `navigable`).
-    Object.assign(document, { visibilityState: 'visible', hasFocus: () => true, baseURI: 'http://render.invalid/' });
-    const location = { pathname: '/', search: '', href: 'http://render.invalid/', origin: 'http://render.invalid' };
+    Object.assign(document, { visibilityState: 'visible', hasFocus: () => true, baseURI: `http://render.invalid${base}` });
+    const location = { pathname: base, search: '', href: `http://render.invalid${base}`, origin: 'http://render.invalid' };
     // What the render read that another render may not read alike: how long its answers stay fresh for any reader
     // (http-cache.mjs `FRESH`), and whether a source drew a random number (its only other reading the clock and
     // `Math.random` refuse, ts-fetch.js) — so how long its page may be given again (`keep`), and whether it may be
@@ -313,7 +315,7 @@ export function renderer(dist, { closed = false, read = path => readFileSync(res
   };
   /** Begin at the page's boot state; `finish` settles its data and composes the document. */
   async function begin(location, viewport = PAGE) {
-    const url = new URL(location, 'http://render.invalid');
+    const url = new URL(withBase(location, base), 'http://render.invalid');
     const made = ahead ?? realm();
     ahead = null;
     const { ctx, read } = made;

@@ -15,7 +15,7 @@ import { filesystem } from '../../scripts/filesystem.mjs';
 import { allowHostArgs, developmentGate, installBrowserOrigins, LOCAL_IOS_INSTALL_ENDPOINT } from '../../scripts/install-page.mjs';
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, unwatchFile, watchFile, writeSync } from 'node:fs';
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
-import { slashRelative, within } from '../../scripts/paths.mjs';
+import { slashRelative, webBase, within } from '../../scripts/paths.mjs';
 import { rustPackage, rustOutput, rustInputs, rustCards } from '../../scripts/rust.mjs';
 import { gpuModules, shaderWatchRoots, rustPolicy, rebuildPolicy } from '../../scripts/app.mjs';
 import { HOST_DEV, webDist, cargoReproducibilityFlags, compilerPaths, developmentBuildEnv, developmentCandidate, devBinRun, pendingBuildInputs, readBuilds, resolveApp } from '../../scripts/app.mjs';
@@ -38,6 +38,7 @@ const arg = (name, fallback) => { const i = argv.indexOf(name); return i >= 0 ? 
 const buildEnv = {...developmentBuildEnv(),EXACT_UPDATE_TRUST:'development',EXACT_WEB_LINK:'all'};
 let app, appDesign;
 try { app = resolveApp(arg('--app', undefined)); appDesign = designPath(app.dir); } catch (e) { console.error(e.message); process.exit(2); }
+const baseFlag = argv.includes('--base') ? arg('--base') : null;
 if (app.outside) buildEnv.EXACT_APP_DIR = app.dir;
 if (app.manifest.game) buildEnv.EXACT_GAME_PROOF_PROFILE ??= 'gpu-dev';
 const lan = argv.includes('--lan');
@@ -86,7 +87,7 @@ const source = resolve(app.dir, 'app.contract');
 // A game (LLP 1071 §8: its runtime is on wasm), and `--wasm` (the loop a
 // native client opening the dev URL reads), run the resident wasm loop below.
 if (!argv.includes('--wasm') && servedAs == null && app.manifest.game === undefined) {
-  await (await import('../web-js/dev.mjs')).devJs({ app, dist, port, host, origins, gate, lan, allowHosts, remoteAsked, pairTtlMs: (await import('../../scripts/forma-pairing.mjs')).pairTtlOf(argv), residentPort: named != null && !webPortRange() ? port + 1 : 0 });
+  await (await import('../web-js/dev.mjs')).devJs({ app, dist, port, host, origins, gate, lan, allowHosts, remoteAsked, base: webBase(baseFlag ?? app.manifest.host?.web?.base, baseFlag !== null), pairTtlMs: (await import('../../scripts/forma-pairing.mjs')).pairTtlOf(argv), residentPort: named != null && !webPortRange() ? port + 1 : 0 });
 }
 // Behind the JS loop (`--serve-as`) an app's resident loop is its producers
 // alone: nothing loads its page, so its builds are the web crate's bake

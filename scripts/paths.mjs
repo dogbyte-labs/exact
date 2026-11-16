@@ -45,3 +45,13 @@ export function pathFrom(from, to) {
   const shared = a.split('/')[1] === b.split('/')[1] && a.split('/')[1] !== '';
   return shared ? (relative(a, b) || '.').split(sep).join('/') : b;
 }
+
+/** A web build's base path (`host.web.base`, or `--base`): the path its site is served under. `/` when none is named. */
+export function webBase(value, flag = null) {
+  if (value === undefined || value === null) return '/';
+  const says = flag ? `--base ${value}` : `host.web.base: ${JSON.stringify(value)}`;
+  if (typeof value !== 'string' || !value.startsWith('/') || !value.endsWith('/')) throw new Error(`${says}: a path that starts and ends with /`);
+  if (/[?#\\]/.test(value) || value.split('/').some((part) => part === '..')) throw new Error(`${says}: a path with no dot segment, ? or #`);
+  if (value !== '/' && value.slice(1, -1).split('/').includes('')) throw new Error(`${says}: a path with no empty segment`);
+  return value;
+}

@@ -17,6 +17,7 @@ import { createServer, request } from 'node:http';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, utimesSync, watch, writeFileSync } from 'node:fs';
 import { basename, dirname, relative, resolve } from 'node:path';
 import { acceptsHTML, appDocumentPath, webRequestURL } from '../../scripts/origin.mjs';
+import { stripBase, underBase } from './route-pattern.js';
 import { appDigest, compilerWarnings, INPUT_TREE, OUTPUT, listenOn, oneScheme } from '../../scripts/agent-launch.mjs';
 import { builtSettings } from '../../js/bake/src/__exact_env.mjs';
 import { alsoOnIPv6Loopback, appManifestDigest, appSources, buildFileCards, listenDelay, replaceBuild, saveTrace, sendStaticBody, watchLauncher, webContentType } from '../web/serve.mjs';
@@ -128,7 +129,7 @@ function build(app, dist, keep = () => false, compiler = null, superseded = null
   return new Promise((done) => {
     // The JS target's build itself, rendering no pages (every route is the
     // shell), with the completion marker host/web/build.mjs writes.
-    const child = building = spawn(process.execPath, [resolve(root, 'host/web-js/build.mjs'), app.name, '--out', stage, '--render', 'none', '--dev'],
+    const child = building = spawn(process.execPath, [resolve(root, 'host/web-js/build.mjs'), app.name, '--out', stage, '--render', 'none', '--dev', '--base', base],
       { cwd: root, env: { ...process.env, EXACT_APP_DIR: app.dir, ...(compiler ? { EXACT_WEB_COMPILER: compiler } : {}) }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     let log = '';
     child.stdout.on('data', (d) => { log += d; });
@@ -208,7 +209,7 @@ function copyCompiler(path, copy, built) {
 const compilerCopy = (app) => resolve(app.target, `web-js-dev-compiler-${app.name.replace(/[^\w.-]/g, '_')}${EXE}`);
 
 /** Build `app` on the JS target and serve it with reload, until the process ends. */
-export async function devJs({ app, dist, port, host, origins, gate, lan, allowHosts = [], remoteAsked = { remote: null, tunnel: null, plugin: false, hosts: [] }, residentPort = 0, pairTtlMs }) {
+export async function devJs({ app, dist, port, host, origins, gate, lan, allowHosts = [], remoteAsked = { remote: null, tunnel: null, plugin: false, hosts: [] }, residentPort = 0, pairTtlMs, base = '/' }) {
   let stopping = false, shutdown = null;
   // A design (`exact-web-js design`), read from the compiler with no build:
   // a value-only edit's and a scrub's. Optimised (host-dev), built as the
@@ -1091,12 +1092,13 @@ es.onmessage=e=>{const m=JSON.parse(e.data);if(m.kind==='forma-batch'||m.kind===
     if (discovery || url.pathname === '/__dev' || url.pathname === '/__dev/open' || url.pathname.startsWith('/__dev/generation/')) { forward(req, res, discovery); return; }
     // From the build the page booted (host/web/generations.mjs): a document names its generation in its base, and
     // its scripts, chunks and plan are read from that build while the next one is put in place.
-    const served = await servedFile(dist, url.pathname, req.headers.accept);
+    if (!underBase(url.pathname, base)) { res.writeHead(404, { 'cache-control': 'no-store' }); res.end(); return; }
+    const served = await servedFile(dist, url.pathname, req.headers.accept, { base });
     if (served.status === 410 || served.status === 400 || served.status === 503) { res.writeHead(served.status, { 'cache-control': 'no-store', ...(served.status === 503 ? { 'retry-after': '1' } : {}) }); res.end(); return; }
     // A miss is a 404, with the build's page for one where it has one (serve.mjs `buildTreeFile`).
     const found = served.body ? served : null;
     // No build yet (the first failed): a blank page that shows the errors and reloads when one lands.
-    if (!found && error && (url.pathname === '/' || appDocumentPath(url.pathname, acceptsHTML(req.headers.accept)))) { res.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }); res.end(`<!doctype html><meta charset="utf-8">${schemeHead(`exact.state.@${appDigest(realpathSync(app.dir))}/#scheme`, { development: true })}<body>${client(seq, logicRevision)}`); return; }
+    if (!found && error && (stripBase(url.pathname, base) === '/' || appDocumentPath(stripBase(url.pathname, base), acceptsHTML(req.headers.accept)))) { res.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }); res.end(`<!doctype html><meta charset="utf-8">${schemeHead(`exact.state.@${appDigest(realpathSync(app.dir))}/#scheme`, { development: true })}<body>${client(seq, logicRevision)}`); return; }
     if (!found) { res.writeHead(404, { 'cache-control': 'no-store' }); res.end(); return; }
     let body = installer.page(found.route, found.body, access);
     if (found.route.endsWith('.html')) {

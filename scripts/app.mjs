@@ -634,7 +634,7 @@ function protocolHandlerProblems({ protocol_handlers = [], host }) {
  * registers neither `http` nor `https`, so those handlers go too.
  * `color_scheme_dark` keeps only the W3C draft's members, and with the app's
  * `dir` each icon gets the `sizes` and `type` of its file (LLP 1163 D2). */
-export function webAppManifest(manifest, name, notes = [], dir = null) {
+export function webAppManifest(manifest, name, notes = [], dir = null, base = '/') {
   const keys = ['name', 'short_name', 'description', 'id', 'start_url', 'display', 'display_override', 'theme_color', 'background_color', 'icons', 'lang', 'orientation', 'file_handlers', 'protocol_handlers', 'launch_handler', 'shortcuts', 'categories'];
   const web = Object.fromEntries(keys.filter((k) => manifest[k] !== undefined).map((k) => [k, manifest[k]]));
   if (web.file_handlers) web.file_handlers = web.file_handlers.filter((h) => !Object.keys(h.accept ?? {}).includes('inode/directory'));
@@ -648,6 +648,7 @@ export function webAppManifest(manifest, name, notes = [], dir = null) {
   for (const key of ['file_handlers', 'protocol_handlers', 'shortcuts']) if (!web[key]?.length) delete web[key];
   web.name ??= name;
   web.start_url ??= '/';
+  if (base !== '/') web.scope = base, web.start_url = /^[a-z][a-z0-9+.-]*:/i.test(web.start_url) ? web.start_url : base.slice(0, -1) + (web.start_url.startsWith('/') ? web.start_url : '/' + web.start_url);
   // The document's language (`<html lang>`, WCAG 3.1.1). Every app here is in
   // English, so an app that declares none is `en`.
   web.lang ??= 'en';

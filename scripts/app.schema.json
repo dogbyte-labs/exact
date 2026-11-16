@@ -1117,6 +1117,11 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "base": {
+              "description": "The path this app's web build is served under, when the host serves it beside other pages rather than at the root: `/app/`. The build writes it as every page's `<base>`, so its scripts, styles, icons and manifest resolve under it, and the router keeps its routes, history and links inside it. A path that starts and ends with `/`, with no `..` segment and no `?`, `#` or `\\`. Default `/`. `web-build --base`, `web --base` and `serve --base` override it.",
+              "type": "string",
+              "pattern": "^/(?!.*\\/\\.\\.(?:\\/|$))(?:[^/?#\\\\]+/)*$"
+            },
             "head": {
               "description": "Tags the web build writes into the <head> of every document: the shell, each pre-rendered page and the 404 page. Each entry is one tag, {\"script\": {...}}, {\"link\": {...}} or {\"meta\": {...}}, whose value is its attributes (a string, or true for a bare one such as async); a script's `text` is its content. For what a site says once to the browser (an analytics script, a preconnect, site-wide JSON-LD); a page's own title and metas are the Contract `head` element's. The same on every page and web only.",
               "type": "array",
